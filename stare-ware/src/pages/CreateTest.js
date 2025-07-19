@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MCQTestForm } from '../components/MCQBuilder';
+import { auth } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 const TESTS_KEY = 'mcq_tests';
 
@@ -39,6 +41,15 @@ const CreateTest = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [publishError, setPublishError] = useState('');
   const [canPublish, setCanPublish] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+
+  // Listen for auth user
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUserEmail(u?.email || '');
+    });
+    return () => unsub();
+  }, []);
 
   // Load test for editing or start new
   useEffect(() => {
@@ -76,7 +87,7 @@ const CreateTest = () => {
       } catch {}
     }
     const idx = tests.findIndex(t => t.id === updatedTest.id);
-    const newTest = { ...updatedTest, status };
+    const newTest = { ...updatedTest, status, ownerEmail: userEmail };
     if (idx >= 0) {
       tests[idx] = newTest;
     } else {
@@ -111,6 +122,7 @@ const CreateTest = () => {
       onPublish={handlePublish}
       publishError={publishError}
       canPublish={canPublish}
+      userEmail={userEmail}
     />
   );
 };
