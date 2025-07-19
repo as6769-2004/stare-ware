@@ -1,7 +1,10 @@
 // src/utils/googleDrive.js
+// IMPORTANT: Set your credentials in a .env file (never commit secrets)
+// REACT_APP_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+// REACT_APP_GOOGLE_API_KEY=your-google-api-key
 
-const CLIENT_ID = '495954001740-nvnak1iamtkrfnfcitok9tfkn69eiruc.apps.googleusercontent.com';
-const API_KEY = 'stare-ware-466417'
+const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+const API_KEY = process.env.REACT_APP_GOOGLE_API_KEY;
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 export function loadGapi() {
@@ -15,6 +18,9 @@ export function loadGapi() {
 }
 
 export async function initGapi() {
+  if (!CLIENT_ID || !API_KEY) {
+    throw new Error('Google API credentials are missing. Set them in your .env file.');
+  }
   await loadGapi();
   await window.gapi.client.init({
     apiKey: API_KEY,
