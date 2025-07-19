@@ -168,6 +168,11 @@ export default function Dashboard() {
     localStorage.setItem(TESTS_KEY, JSON.stringify(updated));
   };
 
+  // Filter tests by current user
+  const filteredTests = user
+    ? tests.filter(t => t.ownerEmail === user.email)
+    : [];
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-white to-purple-100 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 font-sans p-0 transition-colors">
       <div className="max-w-5xl mx-auto py-10 px-4">
@@ -222,9 +227,10 @@ export default function Dashboard() {
         </div>
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl font-bold mb-6 text-blue-700 dark:text-blue-200">Your Tests</h2>
-          {tests.length === 0 && <div className="text-gray-500 dark:text-gray-400">No tests created yet.</div>}
+          {!user && <div className="text-gray-500 dark:text-gray-400">Sign in to view your tests.</div>}
+          {user && filteredTests.length === 0 && <div className="text-gray-500 dark:text-gray-400">No tests created yet for this account.</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {tests.map((test) => (
+            {filteredTests.map((test) => (
               <TestCard
                 key={test.id}
                 test={test}
