@@ -1,103 +1,117 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { MCQTestForm } from '../components/MCQBuilder';
+
+const TESTS_KEY = 'mcq_tests';
+
+function getQueryId(search) {
+  const params = new URLSearchParams(search);
+  return params.get('id');
+}
+
+const emptyTest = {
+  id: '',
+  testTitle: '',
+  description: '',
+  tags: {},
+  questions: [],
+  status: 'draft',
+};
+
+function validateTest(test) {
+  if (!test.testTitle.trim()) return 'Test title is required.';
+  if (!test.questions || test.questions.length === 0) return 'At least one question is required.';
+  for (const [i, q] of test.questions.entries()) {
+    if (!q.questionText.trim()) return `Question ${i + 1} text is required.`;
+    if (!q.options || q.options.length < 2 || q.options.length > 6) return `Question ${i + 1} must have 2-6 options.`;
+    if (!q.options.every(opt => opt.text.trim())) return `All options in question ${i + 1} must have text.`;
+    if (!q.options.some(opt => opt.isCorrect)) return `Mark at least one correct answer in question ${i + 1}.`;
+    if (!q.marks || q.marks < 1) return `Marks must be at least 1 in question ${i + 1}.`;
+    if (q.timer && (isNaN(q.timer) || q.timer < 0)) return `Timer must be a positive number in question ${i + 1}.`;
+  }
+  return '';
+}
 
 const CreateTest = () => {
-  const [questions, setQuestions] = useState([]);
-  const [questionText, setQuestionText] = useState('');
-  const [options, setOptions] = useState(['', '', '', '']);
-  const [correctIndex, setCorrectIndex] = useState(0);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [test, setTest] = useState(emptyTest);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [publishError, setPublishError] = useState('');
+  const [canPublish, setCanPublish] = useState(false);
 
-  const handleOptionChange = (value, idx) => {
-    const newOptions = [...options];
-    newOptions[idx] = value;
-    setOptions(newOptions);
-  };
-
-  const handleAddQuestion = (e) => {
-    e.preventDefault();
-    if (
-      questionText.trim() &&
-      options.every(opt => opt.trim()) &&
-      correctIndex >= 0 &&
-      correctIndex < options.length
-    ) {
-      setQuestions([
-        ...questions,
-        {
-          question: questionText,
-          options: [...options],
-          correct: correctIndex,
-        },
-      ]);
-      setQuestionText('');
-      setOptions(['', '', '', '']);
-      setCorrectIndex(0);
+  // Load test for editing or start new
+  useEffect(() => {
+    const id = getQueryId(location.search);
+    const saved = localStorage.getItem(TESTS_KEY);
+    if (id && saved) {
+      try {
+        const tests = JSON.parse(saved);
+        const found = tests.find(t => t.id === id);
+        if (found) {
+          setTest(found);
+          setIsLoaded(true);
+          return;
+        }
+      } catch {}
     }
+    setTest({ ...emptyTest, id: Date.now().toString() });
+    setIsLoaded(true);
+  }, [location.search]);
+
+  // Recalculate error and canPublish on every test change
+  useEffect(() => {
+    const error = validateTest(test);
+    setPublishError(error);
+    setCanPublish(!error);
+  }, [test]);
+
+  // Save or update test in localStorage
+  const handleSave = (updatedTest, status = 'draft') => {
+    const saved = localStorage.getItem(TESTS_KEY);
+    let tests = [];
+    if (saved) {
+      try {
+        tests = JSON.parse(saved);
+      } catch {}
+    }
+    const idx = tests.findIndex(t => t.id === updatedTest.id);
+    const newTest = { ...updatedTest, status };
+    if (idx >= 0) {
+      tests[idx] = newTest;
+    } else {
+      tests.push(newTest);
+    }
+    localStorage.setItem(TESTS_KEY, JSON.stringify(tests));
+    setTest(newTest);
+    alert(status === 'published' ? 'Test published!' : 'Test saved as draft!');
+    if (status === 'published') navigate('/');
   };
+
+  // Strict publish handler with validation
+  const handlePublish = (updatedTest) => {
+    const error = validateTest(updatedTest);
+    if (error) {
+      setPublishError(error);
+      setCanPublish(false);
+      return;
+    }
+    setPublishError('');
+    setCanPublish(true);
+    handleSave(updatedTest, 'published');
+  };
+
+  if (!isLoaded) return <div className="p-8 text-center">Loading...</div>;
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
-      <h2 className="text-2xl font-bold mb-4">Create MCQ Test</h2>
-      <form onSubmit={handleAddQuestion} className="space-y-4 bg-white p-4 rounded shadow">
-        <div>
-          <label className="block font-semibold mb-1">Question</label>
-          <input
-            type="text"
-            className="w-full border rounded px-2 py-1"
-            value={questionText}
-            onChange={e => setQuestionText(e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <label className="block font-semibold mb-1">Options</label>
-          {options.map((opt, idx) => (
-            <div key={idx} className="flex items-center mb-2">
-              <input
-                type="text"
-                className="flex-1 border rounded px-2 py-1 mr-2"
-                value={opt}
-                onChange={e => handleOptionChange(e.target.value, idx)}
-                required
-              />
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="correctOption"
-                  checked={correctIndex === idx}
-                  onChange={() => setCorrectIndex(idx)}
-                  className="mr-1"
-                />
-                Correct
-              </label>
-            </div>
-          ))}
-        </div>
-        <button
-          type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-        >
-          Add Question
-        </button>
-      </form>
-      <div className="mt-8">
-        <h3 className="text-xl font-semibold mb-2">Questions Added</h3>
-        {questions.length === 0 && <p className="text-gray-500">No questions added yet.</p>}
-        <ul className="space-y-4">
-          {questions.map((q, idx) => (
-            <li key={idx} className="border rounded p-3 bg-gray-50">
-              <div className="font-semibold">Q{idx + 1}: {q.question}</div>
-              <ul className="ml-4 mt-1">
-                {q.options.map((opt, oidx) => (
-                  <li key={oidx} className={q.correct === oidx ? 'font-bold text-green-700' : ''}>
-                    {String.fromCharCode(65 + oidx)}. {opt} {q.correct === oidx && '(Correct)'}
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
+    <MCQTestForm
+      test={test}
+      setTest={setTest}
+      onSave={t => handleSave(t, 'draft')}
+      onPublish={handlePublish}
+      publishError={publishError}
+      canPublish={canPublish}
+    />
   );
 };
 
