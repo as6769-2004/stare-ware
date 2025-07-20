@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import TestCard from "./TestCard";
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { loadUserTests, saveTest } from '../utils/firestore';
 
 const TESTS_KEY = "mcq_tests";
 
@@ -130,17 +131,14 @@ export default function Dashboard() {
 
 
 
-  // Load all tests from localStorage
+  // Load all tests from Firestore
   useEffect(() => {
-    const saved = localStorage.getItem(TESTS_KEY);
-    if (saved) {
-      try {
-        setTests(JSON.parse(saved));
-      } catch {
-        setTests([]);
-      }
+    if (!user) {
+      setTests([]);
+      return;
     }
-  }, []);
+    loadUserTests(user).then(setTests).catch(() => setTests([]));
+  }, [user]);
 
 
 
@@ -153,19 +151,14 @@ export default function Dashboard() {
   const handlePublish = async (id) => {
     const test = tests.find(t => t.id === id);
     if (!test) return;
-    
     const validationError = validateTest(test);
     if (validationError) {
       alert(`Cannot publish test: ${validationError}\n\nPlease fix the validation errors before publishing.`);
       return;
     }
-    
-    const updated = tests.map((t) =>
-      t.id === id ? { ...t, status: "published", publishedAt: new Date().toISOString() } : t
-    );
-    setTests(updated);
-    localStorage.setItem(TESTS_KEY, JSON.stringify(updated));
-    
+    const updatedTest = { ...test, status: 'published', publishedAt: new Date().toISOString() };
+    await saveTest(updatedTest, user);
+    setTests(tests.map(t => t.id === id ? updatedTest : t));
     alert('Test published successfully!');
   };
 
@@ -177,14 +170,13 @@ export default function Dashboard() {
 
   // Change status (live, closed, etc)
   const handleStatusChange = async (id, newStatus) => {
-    const updated = tests.map(t => {
-      if (t.id !== id) return t;
-      if (newStatus === 'live') return { ...t, status: 'live', liveAt: new Date().toISOString() };
-      if (newStatus === 'closed') return { ...t, status: 'closed', closedAt: new Date().toISOString() };
-      return t;
-    });
-    setTests(updated);
-    localStorage.setItem(TESTS_KEY, JSON.stringify(updated));
+    const test = tests.find(t => t.id === id);
+    if (!test) return;
+    let updatedTest = { ...test };
+    if (newStatus === 'live') updatedTest = { ...updatedTest, status: 'live', liveAt: new Date().toISOString() };
+    if (newStatus === 'closed') updatedTest = { ...updatedTest, status: 'closed', closedAt: new Date().toISOString() };
+    await saveTest(updatedTest, user);
+    setTests(tests.map(t => t.id === id ? updatedTest : t));
   };
 
   // Filter tests by current user
