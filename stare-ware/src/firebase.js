@@ -1,11 +1,7 @@
-// stare-ware/src/firebase.js
-
 import { initializeApp } from "firebase/app";
-// import { getAnalytics } from "firebase/analytics";
-import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth"; // If you're using Firebase Auth
-import { getFirestore } from "firebase/firestore"; // Add Firestore import
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 
-// Firebase configuration for your project
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
   authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
@@ -16,11 +12,9 @@ const firebaseConfig = {
   measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-// const analytics = getAnalytics(app);
-export const auth = getAuth(app); // Export auth if you're using it
+export const auth = getAuth(app);
 setPersistence(auth, browserLocalPersistence);
-export const db = getFirestore(app); // Export Firestore instance
+export const db = getFirestore(app);
 
-export default app;
+export default app; 
