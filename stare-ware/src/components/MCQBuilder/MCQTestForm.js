@@ -2,12 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MCQQuestionList from './MCQQuestionList';
 import TagSelector from './TagSelector';
-import {
-  signInWithGoogleDrive,
-  uploadFileToDrive,
-  listDriveFiles,
-  downloadFileFromDrive,
-} from '../../utils/googleDrive';
 
 const TESTS_KEY = 'mcq_tests';
 
@@ -15,65 +9,8 @@ const MCQTestForm = ({ test, setTest, onSave, onPublish, publishError, canPublis
   const { testTitle, description, tags, questions, status, id } = test;
   const [preview, setPreview] = useState(false);
   const navigate = useNavigate();
-  const [driveUser, setDriveUser] = useState(null);
-  const [driveStatus, setDriveStatus] = useState('');
-  const [driveError, setDriveError] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
 
-  // Google Drive sign in (auto on mount)
-  useEffect(() => {
-    (async () => {
-      try {
-        const user = await signInWithGoogleDrive();
-        setDriveUser(user);
-      } catch (e) {
-        setDriveUser(null);
-      }
-    })();
-  }, []);
 
-  // Auto-save to Google Drive on every test change (if signed in)
-  useEffect(() => {
-    if (!driveUser || !testTitle) return;
-    setIsSaving(true);
-    setDriveStatus('Saving to Google Drive...');
-    uploadFileToDrive({
-      name: `${testTitle || 'Untitled'} (stare-ware).json`,
-      content: JSON.stringify(test, null, 2),
-      mimeType: 'application/json',
-    })
-      .then(() => {
-        setDriveStatus('Auto-saved to Google Drive!');
-        setDriveError('');
-      })
-      .catch((e) => {
-        setDriveError('Drive save failed: ' + e.message);
-        setDriveStatus('');
-      })
-      .finally(() => setIsSaving(false));
-    // eslint-disable-next-line
-  }, [test, driveUser]);
-
-  // Load from Google Drive
-  const handleLoadFromDrive = async () => {
-    setDriveStatus('Loading from Google Drive...');
-    setDriveError('');
-    try {
-      const files = await listDriveFiles();
-      if (!files.length) {
-        setDriveError('No test files found in your Google Drive.');
-        setDriveStatus('');
-        return;
-      }
-      const file = files[0]; // For demo, just pick the first file
-      const content = await downloadFileFromDrive(file.id);
-      setTest(JSON.parse(content));
-      setDriveStatus(`Loaded "${file.name}" from Google Drive!`);
-    } catch (e) {
-      setDriveError('Drive load failed: ' + e.message);
-      setDriveStatus('');
-    }
-  };
 
   // Local autosave to localStorage (for fallback)
   useEffect(() => {
@@ -117,34 +54,21 @@ const MCQTestForm = ({ test, setTest, onSave, onPublish, publishError, canPublis
       </button>
       <div className="bg-white rounded-2xl shadow-2xl border border-blue-100 p-8 mb-8">
         <h1 className="text-3xl font-extrabold mb-6 text-blue-800 tracking-tight drop-shadow">{test.id ? 'Edit MCQ Test' : 'Create MCQ Test'}</h1>
-        <div className="mb-4 flex flex-col gap-2">
-          <div className="flex gap-2 items-center">
-            <span className="font-semibold text-blue-700">Google Drive:</span>
-            {driveUser ? (
-              <span className="text-green-700 font-semibold">Signed in as {driveUser.getName()}</span>
-            ) : (
-              <span className="text-red-600">Not signed in</span>
-            )}
-            <button
-              className="ml-2 bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200 text-sm"
-              onClick={handleLoadFromDrive}
-              disabled={!driveUser}
-            >
-              Load from Drive
-            </button>
-            {isSaving && <span className="ml-2 text-xs text-blue-500 animate-pulse">Saving...</span>}
-          </div>
-          {driveStatus && <div className="text-green-700 text-xs">{driveStatus}</div>}
-          {driveError && <div className="text-red-600 text-xs">{driveError}</div>}
-        </div>
         <div className="mb-4">
           <input
             type="text"
-            className="w-full border-2 border-blue-200 rounded-lg px-3 py-2 mb-3 text-lg focus:outline-none focus:border-blue-400 transition"
-            placeholder="Test Title"
+            className={`w-full border-2 rounded-lg px-3 py-2 mb-3 text-lg focus:outline-none transition ${
+              !testTitle || !testTitle.trim() 
+                ? 'border-red-300 bg-red-50 focus:border-red-400' 
+                : 'border-blue-200 focus:border-blue-400'
+            }`}
+            placeholder="Test Title (required)"
             value={testTitle}
             onChange={e => handleField('testTitle', e.target.value)}
           />
+          {(!testTitle || !testTitle.trim()) && (
+            <div className="text-red-600 text-xs mb-2">Test title is required</div>
+          )}
           <textarea
             className="w-full border-2 border-blue-200 rounded-lg px-3 py-2 text-base focus:outline-none focus:border-blue-400 transition"
             placeholder="Test Description"
@@ -156,19 +80,28 @@ const MCQTestForm = ({ test, setTest, onSave, onPublish, publishError, canPublis
             <TagSelector tags={tags} onChange={tags => handleField('tags', tags)} />
           </div>
         </div>
-        <div className="flex gap-4 mb-6">
-          <button
-            className={`px-5 py-2 rounded-lg font-semibold shadow transition ${!preview ? 'bg-blue-600 text-white' : 'bg-gray-200 text-blue-700'}`}
-            onClick={() => setPreview(false)}
-          >
-            Edit
-          </button>
-          <button
-            className={`px-5 py-2 rounded-lg font-semibold shadow transition ${preview ? 'bg-blue-600 text-white' : 'bg-gray-200 text-blue-700'}`}
-            onClick={() => setPreview(true)}
-          >
-            Preview
-          </button>
+        <div className="flex gap-4 mb-6 items-center">
+          <div className="flex gap-2">
+            <button
+              className={`px-5 py-2 rounded-lg font-semibold shadow transition ${!preview ? 'bg-blue-600 text-white' : 'bg-gray-200 text-blue-700'}`}
+              onClick={() => setPreview(false)}
+            >
+              Edit
+            </button>
+            <button
+              className={`px-5 py-2 rounded-lg font-semibold shadow transition ${preview ? 'bg-blue-600 text-white' : 'bg-gray-200 text-blue-700'}`}
+              onClick={() => setPreview(true)}
+            >
+              Preview
+            </button>
+          </div>
+          <div className={`ml-4 px-3 py-1 rounded-full text-xs font-semibold ${
+            canPublish 
+              ? 'bg-green-100 text-green-700 border border-green-200' 
+              : 'bg-red-100 text-red-700 border border-red-200'
+          }`}>
+            {canPublish ? '✅ Form Valid' : '❌ Form Invalid'}
+          </div>
         </div>
         {!preview ? (
           <MCQQuestionList questions={questions} setQuestions={handleQuestions} />
@@ -213,7 +146,12 @@ const MCQTestForm = ({ test, setTest, onSave, onPublish, publishError, canPublis
           </div>
         )}
         {publishError && (
-          <div className="mt-4 text-red-600 font-semibold text-sm bg-red-50 border border-red-200 rounded p-2">{publishError}</div>
+          <div className="mt-4 text-red-600 font-semibold text-sm bg-red-50 border border-red-200 rounded p-2">
+            <div className="flex items-center gap-2">
+              <span className="text-red-500">⚠️</span>
+              <span>{publishError}</span>
+            </div>
+          </div>
         )}
         <div className="flex gap-4 mt-8">
           <button
@@ -223,13 +161,31 @@ const MCQTestForm = ({ test, setTest, onSave, onPublish, publishError, canPublis
             Save as Draft
           </button>
           <button
-            className={`bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-2 rounded-lg font-semibold shadow transition ${!canPublish ? 'opacity-50 cursor-not-allowed' : 'hover:from-blue-600 hover:to-blue-800'}`}
+            className={`px-6 py-2 rounded-lg font-semibold shadow transition ${
+              canPublish 
+                ? 'bg-gradient-to-r from-green-500 to-green-700 text-white hover:from-green-600 hover:to-green-800' 
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
             onClick={() => canPublish && onPublish({ ...test, questions })}
             disabled={!canPublish}
+            title={!canPublish ? 'Complete all required fields to publish' : 'Publish test'}
           >
-            Publish
+            {canPublish ? '✅ Publish' : '❌ Publish'}
           </button>
         </div>
+        {!canPublish && (
+          <div className="mt-2 text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded p-2">
+            <div className="font-semibold mb-1">To publish, ensure:</div>
+            <ul className="list-disc list-inside space-y-1 text-xs">
+              <li>Test title is filled</li>
+              <li>At least one question is added</li>
+              <li>All questions have text</li>
+              <li>All options have text</li>
+              <li>At least one correct answer is marked per question</li>
+              <li>Marks are set (minimum 1)</li>
+            </ul>
+          </div>
+        )}
         <div className="mt-10">
           <h3 className="text-lg font-semibold mb-2 text-blue-700">Test JSON Output</h3>
           <pre className="bg-gray-100 p-3 rounded text-xs overflow-x-auto max-h-64 border border-blue-100">{JSON.stringify(getTestJSON(), null, 2)}</pre>
