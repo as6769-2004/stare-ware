@@ -1,5 +1,4 @@
 [build]
-  base = "stare-ware"
   publish = "stare-ware/build"
   command = "cd stare-ware && npm run build"
 
