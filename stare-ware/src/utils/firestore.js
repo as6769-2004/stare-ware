@@ -8,7 +8,8 @@ import {
   getDoc,
   getDocs,
   query,
-  where
+  where,
+  deleteDoc // Add deleteDoc import
 } from 'firebase/firestore';
 
 // Save or update a user profile
@@ -32,13 +33,31 @@ export async function loadUserProfile(uid) {
 // Save or update a test (if test.id exists, update; else, create new)
 export async function saveTest(test, user) {
   if (!user) throw new Error('No user');
+  const now = new Date().toISOString();
   if (test.id) {
-    await setDoc(doc(db, 'tests', test.id), { ...test, ownerUid: user.uid, ownerEmail: user.email });
+    await setDoc(doc(db, 'tests', test.id), {
+      ...test,
+      ownerUid: user.uid,
+      ownerEmail: user.email,
+      updatedAt: now,
+      createdAt: test.createdAt || now
+    });
     return test.id;
   } else {
-    const docRef = await addDoc(collection(db, 'tests'), { ...test, ownerUid: user.uid, ownerEmail: user.email });
+    const docRef = await addDoc(collection(db, 'tests'), {
+      ...test,
+      ownerUid: user.uid,
+      ownerEmail: user.email,
+      createdAt: now,
+      updatedAt: now
+    });
     return docRef.id;
   }
+}
+
+// Delete a test by id
+export async function deleteTest(testId) {
+  await deleteDoc(doc(db, 'tests', testId));
 }
 
 // Load all tests for a user
@@ -47,4 +66,11 @@ export async function loadUserTests(user) {
   const q = query(collection(db, 'tests'), where('ownerUid', '==', user.uid));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// Get a single test by id
+export async function getTestById(testId) {
+  const docRef = doc(db, 'tests', testId);
+  const docSnap = await getDoc(docRef);
+  return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
 } 
