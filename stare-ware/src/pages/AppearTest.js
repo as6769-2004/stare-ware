@@ -156,7 +156,7 @@ const AppearTest = () => {
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [testStarted]);
+  }, [testStarted, handleSuspiciousActivity]);
 
   // Test timer
   useEffect(() => {
@@ -177,7 +177,7 @@ const AppearTest = () => {
         clearInterval(testTimerRef.current);
       }
     };
-  }, [testStarted, timeLeft]);
+  }, [testStarted, timeLeft, handleTestComplete]);
 
   // Anti-cheating checks
   useEffect(() => {
@@ -201,7 +201,7 @@ const AppearTest = () => {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [testStarted, faceDetected, faceRecognitionReady]);
+  }, [testStarted, faceDetected, faceRecognitionReady, handleSuspiciousActivity]);
 
   const handleSuspiciousActivity = (reason) => {
     setSuspiciousActivity(true);
