@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Webcam from 'react-webcam';
+import { getTestById } from '../utils/firestore';
+import { auth } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 const TESTS_KEY = 'mcq_tests';
 
@@ -21,36 +24,57 @@ const AppearTest = () => {
   const [faceDetected, setFaceDetected] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [fullscreenWarnings, setFullscreenWarnings] = useState(0);
+  const [user, setUser] = useState(null);
+  const [showCameraPopup, setShowCameraPopup] = useState(false);
+  const [showGetReady, setShowGetReady] = useState(true);
+  const [cameraError, setCameraError] = useState('');
 
-  // Load test data
+  // Load test data from Firestore
   useEffect(() => {
     const testId = new URLSearchParams(location.search).get('id');
     if (!testId) {
       navigate('/');
       return;
     }
-
-    const saved = localStorage.getItem(TESTS_KEY);
-    if (saved) {
-      try {
-        const tests = JSON.parse(saved);
-        const foundTest = tests.find(t => t.id === testId);
-        if (foundTest) {
-          setTest(foundTest);
-          setTimeLeft(foundTest.timeLimit || 3600); // Default 1 hour
-        } else {
-          navigate('/');
-        }
-      } catch {
+    getTestById(testId).then(foundTest => {
+      if (foundTest) {
+        setTest(foundTest);
+        setTimeLeft(foundTest.timeLimit || 3600);
+      } else {
         navigate('/');
       }
-    } else {
-      navigate('/');
-    }
+    }).catch(() => navigate('/'));
   }, [location.search, navigate]);
+
+  // Require sign-in before appearing for test
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (!u) {
+        // Save intended URL and redirect to dashboard (or sign-in page)
+        localStorage.setItem('redirectAfterSignIn', location.pathname + location.search);
+        navigate('/');
+      }
+    });
+    return () => unsub();
+  }, [navigate, location]);
+
+  // After sign-in, redirect back to intended test
+  useEffect(() => {
+    if (user) {
+      const redirect = localStorage.getItem('redirectAfterSignIn');
+      if (redirect) {
+        localStorage.removeItem('redirectAfterSignIn');
+        if (redirect !== location.pathname + location.search) {
+          navigate(redirect, { replace: true });
+        }
+      }
+    }
+  }, [user, navigate, location]);
 
   // Camera setup
   useEffect(() => {
+    if (showGetReady) return; // Wait for user to continue
     const setupCamera = async () => {
       try {
         await navigator.mediaDevices.getUserMedia({ 
@@ -61,6 +85,8 @@ const AppearTest = () => {
           } 
         });
         setCameraReady(true);
+        setShowCameraPopup(false);
+        setCameraError('');
         
         // Simple face detection using canvas analysis
         const checkFaceDetection = () => {
@@ -101,11 +127,13 @@ const AppearTest = () => {
       } catch (error) {
         console.error('Camera access failed:', error);
         setCameraReady(false);
+        setShowCameraPopup(true);
+        setCameraError(error.message || 'Unknown error');
       }
     };
     
     setupCamera();
-  }, []);
+  }, [showGetReady]);
 
   const handleTestComplete = useCallback(() => {
     setTestCompleted(true);
@@ -236,6 +264,10 @@ const AppearTest = () => {
     const secs = seconds % 60;
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  if (!user) {
+    return <div className="p-8 text-center">Please sign in to appear for the test.</div>;
+  }
 
   if (!test) {
     return <div className="p-8 text-center">Loading...</div>;
@@ -380,6 +412,51 @@ const AppearTest = () => {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show 'Get Ready' modal before requesting camera access
+  if (showGetReady) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+          <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-200">Get Ready to Allow Camera</h2>
+          <p className="mb-6 text-gray-600 dark:text-gray-400">
+            This test requires access to your camera for proctoring. When you click Continue, your browser will ask for camera permission. Please click <b>Allow</b> in the popup.
+          </p>
+          <button
+            className="bg-blue-500 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-600 transition"
+            onClick={() => setShowGetReady(false)}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Camera access popup/modal
+  if (showCameraPopup) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+          <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-200">Camera Access Needed</h2>
+          <p className="mb-6 text-gray-600 dark:text-gray-400">
+            This test requires access to your camera for proctoring. Please allow camera access in your browser settings and reload the page.
+          </p>
+          {cameraError && (
+            <div className="text-red-600 mt-2">
+              <b>Error:</b> {cameraError}
+            </div>
+          )}
+          <button
+            className="bg-blue-500 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-600 transition"
+            onClick={() => window.location.reload()}
+          >
+            Reload & Retry
+          </button>
         </div>
       </div>
     );
