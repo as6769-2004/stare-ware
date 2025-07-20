@@ -1,4 +1,5 @@
 import React from 'react';
+import { useState } from 'react';
 
 const statusLabels = {
   draft: 'Draft',
@@ -66,10 +67,36 @@ function validateTest(test) {
   return '';
 }
 
-const TestCard = ({ test, onEdit, onPublish, onPreview, onStatusChange }) => {
+const TestCard = ({ test, onEdit, onPublish, onPreview, onStatusChange, onDelete }) => {
+  const [copied, setCopied] = useState(false);
   const showPublish = test.status === 'draft';
   const showLive = test.status === 'published';
   const showClose = test.status === 'live';
+  const showCopyLink = test.status === 'live';
+  const testLink = `${window.location.origin}/appear-test?id=${test.id}`;
+
+  const handleCopyLink = () => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(testLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } else {
+      // Fallback for older browsers or non-secure origins
+      const textArea = document.createElement('textarea');
+      textArea.value = testLink;
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch (err) {
+        alert('Failed to copy link.');
+      }
+      document.body.removeChild(textArea);
+    }
+  };
   
   // Check if test is valid for publishing
   const validationError = validateTest(test);
@@ -150,6 +177,23 @@ const TestCard = ({ test, onEdit, onPublish, onPreview, onStatusChange }) => {
             onClick={() => onStatusChange('live')}
           >
             Reopen (Go Live)
+          </button>
+        )}
+        {showCopyLink && (
+          <button
+            onClick={handleCopyLink}
+            className="bg-blue-100 text-blue-800 px-3 py-1 rounded font-semibold hover:bg-blue-200"
+            title="Copy test link"
+          >
+            {copied ? 'Link Copied!' : 'Copy Link'}
+          </button>
+        )}
+        {onDelete && (
+          <button
+            className="bg-red-500 text-white px-4 py-1.5 rounded-lg hover:bg-red-700 font-semibold shadow-sm transition"
+            onClick={onDelete}
+          >
+            Delete
           </button>
         )}
       </div>
