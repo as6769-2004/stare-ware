@@ -1,7 +1,7 @@
 // stare-ware/src/firebase.js
 
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+// import { getAnalytics } from "firebase/analytics";
 import { getAuth } from "firebase/auth"; // If you're using Firebase Auth
 
 // Firebase configuration for your project
