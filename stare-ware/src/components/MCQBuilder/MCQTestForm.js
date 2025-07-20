@@ -12,25 +12,6 @@ const MCQTestForm = ({ test, setTest, onSave, onPublish, publishError, canPublis
 
 
 
-  // Local autosave to localStorage (for fallback)
-  useEffect(() => {
-    if (!id) return;
-    const saved = localStorage.getItem(TESTS_KEY);
-    let tests = [];
-    if (saved) {
-      try {
-        tests = JSON.parse(saved);
-      } catch {}
-    }
-    const idx = tests.findIndex(t => t.id === id);
-    if (idx >= 0) {
-      tests[idx] = test;
-    } else {
-      tests.push(test);
-    }
-    localStorage.setItem(TESTS_KEY, JSON.stringify(tests));
-  }, [test, id]);
-
   // Update test fields
   const handleField = (field, value) => {
     setTest({ ...test, [field]: value });
