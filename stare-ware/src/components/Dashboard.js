@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import TestCard from "./TestCard";
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { loadUserTests, saveTest } from '../utils/firestore';
+import { loadUserTests, saveTest, deleteTest } from '../utils/firestore';
 
 const TESTS_KEY = "mcq_tests";
 
@@ -68,6 +68,9 @@ function TestPreviewModal({ test, onClose }) {
         <button className="absolute top-3 right-4 text-3xl text-gray-400 hover:text-red-500" onClick={onClose}>&times;</button>
         <h2 className="text-3xl font-extrabold mb-2 text-blue-700 dark:text-blue-200">{test.testTitle || 'Untitled Test'}</h2>
         <div className="mb-4 text-gray-600 dark:text-gray-300 italic">{test.description}</div>
+        <div className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+          Created: {test.createdAt ? new Date(test.createdAt).toLocaleString() : 'N/A'} | Updated: {test.updatedAt ? new Date(test.updatedAt).toLocaleString() : 'N/A'}
+        </div>
         {test.questions && test.questions.length > 0 ? (
           <div className="space-y-6">
             {test.questions.map((q, idx) => (
@@ -179,6 +182,13 @@ export default function Dashboard() {
     setTests(tests.map(t => t.id === id ? updatedTest : t));
   };
 
+  // Delete a test
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this test?')) return;
+    await deleteTest(id);
+    setTests(tests.filter(t => t.id !== id));
+  };
+
   // Filter tests by current user
   const filteredTests = user
     ? tests.filter(t => t.ownerEmail === user.email)
@@ -218,6 +228,7 @@ export default function Dashboard() {
               onPublish={() => handlePublish(test.id)}
               onPreview={() => handlePreview(test.id)}
               onStatusChange={status => handleStatusChange(test.id, status)}
+              onDelete={() => handleDelete(test.id)}
             />
           ))}
         </div>
