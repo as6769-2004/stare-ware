@@ -1,5 +1,5 @@
 [build]
-  publish = "stare-ware/build"
+  publish = "build"
   command = "npm run build"
 
 [[redirects]]
