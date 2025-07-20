@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Webcam from 'react-webcam';
-import * as faceapi from 'face-api.js';
 
 const TESTS_KEY = 'mcq_tests';
 
@@ -9,8 +8,6 @@ const AppearTest = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const webcamRef = useRef(null);
-  const canvasRef = useRef(null);
-  const intervalRef = useRef(null);
   const testTimerRef = useRef(null);
   
   // State management
@@ -21,199 +18,94 @@ const AppearTest = () => {
   const [testStarted, setTestStarted] = useState(false);
   const [testCompleted, setTestCompleted] = useState(false);
   const [score, setScore] = useState(0);
-  
-  // Face recognition and anti-cheating
   const [faceDetected, setFaceDetected] = useState(false);
-  const [faceConfidence, setFaceConfidence] = useState(0);
+  const [cameraReady, setCameraReady] = useState(false);
   const [fullscreenWarnings, setFullscreenWarnings] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [suspiciousActivity, setSuspiciousActivity] = useState(false);
-  const [faceRecognitionReady, setFaceRecognitionReady] = useState(false);
-  
-  // UI states
-  const [showRules, setShowRules] = useState(true);
-  const [showFaceSetup, setShowFaceSetup] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
-  // Load test data from URL params
+  // Load test data
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const testId = params.get('id');
-    
+    const testId = new URLSearchParams(location.search).get('id');
     if (!testId) {
-      setError('No test ID provided');
-      setLoading(false);
+      navigate('/');
       return;
     }
 
-    const savedTests = localStorage.getItem(TESTS_KEY);
-    if (savedTests) {
+    const saved = localStorage.getItem(TESTS_KEY);
+    if (saved) {
       try {
-        const tests = JSON.parse(savedTests);
+        const tests = JSON.parse(saved);
         const foundTest = tests.find(t => t.id === testId);
-        
-        if (foundTest && foundTest.status === 'live') {
+        if (foundTest) {
           setTest(foundTest);
-          setTimeLeft(foundTest.duration * 60); // Convert minutes to seconds
+          setTimeLeft(foundTest.timeLimit || 3600); // Default 1 hour
         } else {
-          setError('Test not found or not available');
+          navigate('/');
         }
-      } catch (err) {
-        setError('Error loading test');
+      } catch {
+        navigate('/');
       }
     } else {
-      setError('No tests available');
+      navigate('/');
     }
-    setLoading(false);
-  }, [location]);
+  }, [location.search, navigate]);
 
-  // Load face-api models
+  // Camera setup
   useEffect(() => {
-    const loadModels = async () => {
+    const setupCamera = async () => {
       try {
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
-          faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-          faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
-          faceapi.nets.faceExpressionNet.loadFromUri('/models')
-        ]);
-        setFaceRecognitionReady(true);
+        await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: 640, 
+            height: 480,
+            facingMode: 'user'
+          } 
+        });
+        setCameraReady(true);
+        
+        // Simple face detection using canvas analysis
+        const checkFaceDetection = () => {
+          if (webcamRef.current && webcamRef.current.video) {
+            const video = webcamRef.current.video;
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // Simple skin tone detection as basic face detection
+            let skinPixels = 0;
+            for (let i = 0; i < data.length; i += 4) {
+              const r = data[i];
+              const g = data[i + 1];
+              const b = data[i + 2];
+              
+              // Basic skin tone detection
+              if (r > 95 && g > 40 && b > 20 && 
+                  Math.max(r, g, b) - Math.min(r, g, b) > 15 &&
+                  Math.abs(r - g) > 15 && r > g && r > b) {
+                skinPixels++;
+              }
+            }
+            
+            const skinPercentage = skinPixels / (data.length / 4);
+            setFaceDetected(skinPercentage > 0.1); // 10% skin pixels threshold
+          }
+        };
+        
+        const interval = setInterval(checkFaceDetection, 1000);
+        return () => clearInterval(interval);
       } catch (error) {
-        console.error('Error loading face recognition models:', error);
-        // Fallback: continue without face recognition
-        setFaceRecognitionReady(false);
+        console.error('Camera access failed:', error);
+        setCameraReady(false);
       }
     };
     
-    loadModels();
+    setupCamera();
   }, []);
-
-  // Face detection loop
-  const detectFace = useCallback(async () => {
-    if (!webcamRef.current || !canvasRef.current || !faceRecognitionReady) return;
-
-    try {
-      const video = webcamRef.current.video;
-      const canvas = canvasRef.current;
-      
-      if (video.readyState === 4) {
-        const detections = await faceapi.detectSingleFace(
-          video,
-          new faceapi.TinyFaceDetectorOptions()
-        ).withFaceLandmarks().withFaceExpressions();
-
-        if (detections) {
-          setFaceDetected(true);
-          setFaceConfidence(detections.detection.score);
-          
-          // Draw face detection box
-          const displaySize = { width: video.videoWidth, height: video.videoHeight };
-          faceapi.matchDimensions(canvas, displaySize);
-          const resizedDetections = faceapi.resizeResults(detections, displaySize);
-          canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-          faceapi.draw.drawDetections(canvas, resizedDetections);
-        } else {
-          setFaceDetected(false);
-          setFaceConfidence(0);
-          canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-        }
-      }
-    } catch (error) {
-      console.error('Face detection error:', error);
-    }
-  }, [faceRecognitionReady]);
-
-  // Start face detection
-  useEffect(() => {
-    if (testStarted && faceRecognitionReady) {
-      intervalRef.current = setInterval(detectFace, 100);
-    }
-    
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [testStarted, faceRecognitionReady, detectFace]);
-
-  // Fullscreen detection
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isFullscreenNow = document.fullscreenElement !== null;
-      setIsFullscreen(isFullscreenNow);
-      
-      if (isFullscreenNow && testStarted) {
-        setFullscreenWarnings(prev => {
-          const newWarnings = prev + 1;
-          if (newWarnings >= 3) {
-            handleSuspiciousActivity('Maximum fullscreen warnings exceeded');
-          }
-          return newWarnings;
-        });
-      }
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [testStarted, handleSuspiciousActivity]);
-
-  // Test timer
-  useEffect(() => {
-    if (testStarted && timeLeft > 0) {
-      testTimerRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            handleTestComplete();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-
-    return () => {
-      if (testTimerRef.current) {
-        clearInterval(testTimerRef.current);
-      }
-    };
-  }, [testStarted, timeLeft, handleTestComplete]);
-
-  // Anti-cheating checks
-  useEffect(() => {
-    if (!testStarted) return;
-
-    // Check for face detection
-    if (!faceDetected && faceRecognitionReady) {
-      setTimeout(() => {
-        if (!faceDetected) {
-          handleSuspiciousActivity('Face not detected');
-        }
-      }, 5000); // 5 seconds grace period
-    }
-
-    // Check for tab switching
-    const handleVisibilityChange = () => {
-      if (document.hidden && testStarted) {
-        handleSuspiciousActivity('Tab switching detected');
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [testStarted, faceDetected, faceRecognitionReady, handleSuspiciousActivity]);
-
-  const handleSuspiciousActivity = useCallback((reason) => {
-    setSuspiciousActivity(true);
-    alert(`⚠️ WARNING: ${reason}\nThis is your ${fullscreenWarnings + 1} warning. Test will auto-submit after 3 warnings.`);
-    
-    if (fullscreenWarnings >= 2) {
-      setTimeout(() => {
-        alert('🚫 Test auto-submitted due to multiple violations');
-        handleTestComplete();
-      }, 2000);
-    }
-  }, [fullscreenWarnings]);
 
   const handleTestComplete = useCallback(() => {
     setTestCompleted(true);
@@ -246,6 +138,82 @@ const AppearTest = () => {
     localStorage.setItem('test_results', JSON.stringify(existingResults));
   }, [test, answers]);
 
+  const handleSuspiciousActivity = useCallback((reason) => {
+    alert(`⚠️ WARNING: ${reason}\nThis is your ${fullscreenWarnings + 1} warning. Test will auto-submit after 3 warnings.`);
+    
+    if (fullscreenWarnings >= 2) {
+      setTimeout(() => {
+        alert('🚫 Test auto-submitted due to multiple violations');
+        handleTestComplete();
+      }, 2000);
+    }
+  }, [fullscreenWarnings, handleTestComplete]);
+
+  // Anti-cheating checks
+  useEffect(() => {
+    if (!testStarted) return;
+
+    // Check for face detection
+    if (!faceDetected && cameraReady) {
+      setTimeout(() => {
+        if (!faceDetected) {
+          handleSuspiciousActivity('Face not detected');
+        }
+      }, 5000); // 5 seconds grace period
+    }
+
+    // Check for tab switching
+    const handleVisibilityChange = () => {
+      if (document.hidden && testStarted) {
+        handleSuspiciousActivity('Tab switching detected');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [testStarted, faceDetected, cameraReady, handleSuspiciousActivity]);
+
+  // Test timer
+  useEffect(() => {
+    if (testStarted && timeLeft > 0) {
+      testTimerRef.current = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            handleTestComplete();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (testTimerRef.current) {
+        clearInterval(testTimerRef.current);
+      }
+    };
+  }, [testStarted, timeLeft, handleTestComplete]);
+
+  // Fullscreen detection
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isFullscreenNow = document.fullscreenElement !== null;
+      
+      if (!isFullscreenNow && testStarted) {
+        setFullscreenWarnings(prev => {
+          const newWarnings = prev + 1;
+          if (newWarnings >= 3) {
+            handleSuspiciousActivity('Maximum fullscreen warnings exceeded');
+          }
+          return newWarnings;
+        });
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, [testStarted, handleSuspiciousActivity]);
+
   const handleAnswerSelect = (questionIndex, answerIndex) => {
     setAnswers(prev => ({
       ...prev,
@@ -253,207 +221,162 @@ const AppearTest = () => {
     }));
   };
 
-  const handleStartTest = () => {
-    setShowRules(false);
-    setShowFaceSetup(true);
-  };
-
-  const handleFaceSetupComplete = () => {
-    setShowFaceSetup(false);
-    setTestStarted(true);
+  const startTest = async () => {
+    try {
+      await document.documentElement.requestFullscreen();
+      setTestStarted(true);
+    } catch (error) {
+      alert('Please enable fullscreen mode to start the test');
+    }
   };
 
   const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading test...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-500 text-6xl mb-4">⚠️</div>
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4">Error</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
-          <button
-            onClick={() => navigate('/')}
-            className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (!test) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-500 text-6xl mb-4">❌</div>
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4">Test Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">The test you're looking for doesn't exist or is not available.</p>
-          <button
-            onClick={() => navigate('/')}
-            className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
-    );
+    return <div className="p-8 text-center">Loading...</div>;
   }
 
-  // Rules and Regulations Screen
-  if (showRules) {
+  if (testCompleted) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-        <div className="max-w-4xl mx-auto">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
+        <div className="max-w-4xl mx-auto px-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8">
+            <h1 className="text-3xl font-bold text-center text-gray-800 dark:text-gray-200 mb-8">
+              Test Completed!
+            </h1>
+            
             <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-200 mb-4">
-                Test Rules & Regulations
-              </h1>
+              <div className="text-6xl font-bold text-blue-600 dark:text-blue-400 mb-4">
+                {score}%
+              </div>
               <p className="text-gray-600 dark:text-gray-400">
-                Please read all rules carefully before starting the test
+                Your Score: {score} out of 100
               </p>
             </div>
 
-            <div className="space-y-6">
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-red-800 dark:text-red-200 mb-3">
-                  ⚠️ Important Rules
-                </h3>
-                <ul className="space-y-2 text-red-700 dark:text-red-300">
-                  <li>• Face recognition is mandatory - keep your face visible at all times</li>
-                  <li>• Do not switch tabs or applications during the test</li>
-                  <li>• Do not exit fullscreen mode</li>
-                  <li>• Maximum 3 warnings before auto-submission</li>
-                  <li>• Test will auto-submit when time expires</li>
-                </ul>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Test Details</h3>
+                <p className="text-gray-600 dark:text-gray-400">Title: {test.testTitle}</p>
+                <p className="text-gray-600 dark:text-gray-400">Questions: {test.questions.length}</p>
               </div>
-
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-200 mb-3">
-                  📋 Test Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-blue-700 dark:text-blue-300">
-                  <div>
-                    <strong>Test Title:</strong> {test.testTitle}
-                  </div>
-                  <div>
-                    <strong>Duration:</strong> {test.duration} minutes
-                  </div>
-                  <div>
-                    <strong>Questions:</strong> {test.questions.length}
-                  </div>
-                  <div>
-                    <strong>Total Marks:</strong> {test.questions.reduce((sum, q) => sum + (q.marks || 1), 0)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-green-800 dark:text-green-200 mb-3">
-                  ✅ What You Can Do
-                </h3>
-                <ul className="space-y-2 text-green-700 dark:text-green-300">
-                  <li>• Take your time to read questions carefully</li>
-                  <li>• Review your answers before submitting</li>
-                  <li>• Use the timer to manage your time</li>
-                  <li>• Contact support if you encounter technical issues</li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="mt-8 text-center">
-              <button
-                onClick={handleStartTest}
-                className="bg-blue-500 text-white px-8 py-3 rounded-lg hover:bg-blue-600 transition text-lg font-semibold"
-              >
-                I Understand - Start Test
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Face Setup Screen
-  if (showFaceSetup) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8">
-            <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-200 mb-4">
-                Face Recognition Setup
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Please position your face in the camera view
-              </p>
-            </div>
-
-            <div className="flex justify-center mb-6">
-              <div className="relative">
-                <Webcam
-                  ref={webcamRef}
-                  audio={false}
-                  className="rounded-lg"
-                  width={400}
-                  height={300}
-                />
-                <canvas
-                  ref={canvasRef}
-                  className="absolute top-0 left-0"
-                  width={400}
-                  height={300}
-                />
+              
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Your Answers</h3>
+                <p className="text-gray-600 dark:text-gray-400">Answered: {Object.keys(answers).length}</p>
+                <p className="text-gray-600 dark:text-gray-400">Skipped: {test.questions.length - Object.keys(answers).length}</p>
               </div>
             </div>
 
             <div className="text-center">
-              <div className="mb-4">
-                <span className={`inline-block px-4 py-2 rounded-full text-sm font-semibold ${
-                  faceDetected 
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                }`}>
-                  {faceDetected ? '✅ Face Detected' : '❌ No Face Detected'}
-                </span>
-              </div>
-              
-              {faceDetected && (
-                <div className="mb-6">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Confidence: {Math.round(faceConfidence * 100)}%
-                  </p>
-                </div>
-              )}
-
               <button
-                onClick={handleFaceSetupComplete}
-                disabled={!faceDetected}
-                className={`px-8 py-3 rounded-lg text-lg font-semibold transition ${
-                  faceDetected
+                onClick={() => navigate('/')}
+                className="bg-blue-500 text-white px-8 py-3 rounded-lg hover:bg-blue-600 transition"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!testStarted) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
+        <div className="max-w-4xl mx-auto px-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8">
+            <h1 className="text-3xl font-bold text-center text-gray-800 dark:text-gray-200 mb-8">
+              {test.testTitle}
+            </h1>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+              {/* Camera Setup */}
+              <div className="space-y-4">
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                  Camera Setup
+                </h2>
+                
+                {!cameraReady ? (
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+                    <p className="text-yellow-800 dark:text-yellow-200">
+                      Please allow camera access to continue
+                    </p>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Webcam
+                      ref={webcamRef}
+                      audio={false}
+                      width="100%"
+                      height="auto"
+                      className="rounded-lg border-2 border-gray-200 dark:border-gray-700"
+                    />
+                    <div className={`absolute top-2 right-2 px-2 py-1 rounded text-sm font-medium ${
+                      faceDetected 
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-200' 
+                        : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-200'
+                    }`}>
+                      {faceDetected ? '✅ Face Detected' : '❌ No Face'}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Test Rules */}
+              <div className="space-y-4">
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                  Test Rules
+                </h2>
+                
+                <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+                  <div className="flex items-start space-x-2">
+                    <span className="text-red-500 mt-1">⚠️</span>
+                    <span>Face must be visible at all times</span>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <span className="text-red-500 mt-1">⚠️</span>
+                    <span>Fullscreen mode required</span>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <span className="text-red-500 mt-1">⚠️</span>
+                    <span>No tab switching allowed</span>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <span className="text-red-500 mt-1">⚠️</span>
+                    <span>3 warnings = auto-submission</span>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <span className="text-blue-500 mt-1">⏱️</span>
+                    <span>Time limit: {formatTime(timeLeft)}</span>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <span className="text-green-500 mt-1">📝</span>
+                    <span>Questions: {test.questions.length}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <button
+                onClick={startTest}
+                disabled={!cameraReady || !faceDetected}
+                className={`px-8 py-3 rounded-lg font-medium transition ${
+                  cameraReady && faceDetected
                     ? 'bg-blue-500 text-white hover:bg-blue-600'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
               >
-                {faceDetected ? 'Start Test' : 'Please Position Your Face'}
+                {!cameraReady ? 'Setting up camera...' : 
+                 !faceDetected ? 'Please position your face in camera' : 
+                 'Start Test'}
               </button>
             </div>
           </div>
@@ -462,65 +385,14 @@ const AppearTest = () => {
     );
   }
 
-  // Test Completed Screen
-  if (testCompleted) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 text-center">
-            <div className="text-6xl mb-6">
-              {score >= 70 ? '🎉' : score >= 50 ? '😊' : '📚'}
-            </div>
-            
-            <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-200 mb-4">
-              Test Completed!
-            </h1>
-            
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 mb-6">
-              <h2 className="text-2xl font-bold text-blue-800 dark:text-blue-200 mb-4">
-                Your Score: {score}%
-              </h2>
-              
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <strong>Correct Answers:</strong> {Math.round((score / 100) * test.questions.length)}/{test.questions.length}
-                </div>
-                <div>
-                  <strong>Test Duration:</strong> {test.duration} minutes
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <button
-                onClick={() => navigate('/')}
-                className="w-full bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition"
-              >
-                Back to Dashboard
-              </button>
-              
-              <button
-                onClick={() => window.print()}
-                className="w-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-6 py-3 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-              >
-                Print Results
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Main Test Interface
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header with Timer and Status */}
-      <div className="bg-white dark:bg-gray-800 shadow-lg border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-6xl mx-auto px-6 py-4">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold text-gray-800 dark:text-gray-200">
+              <h1 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
                 {test.testTitle}
               </h1>
               <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -530,145 +402,127 @@ const AppearTest = () => {
             
             <div className="flex items-center space-x-4">
               {/* Face Detection Status */}
-              <div className="flex items-center space-x-2">
-                <div className={`w-3 h-3 rounded-full ${
-                  faceDetected ? 'bg-green-500' : 'bg-red-500'
-                }`}></div>
-                <span className="text-sm text-gray-600 dark:text-gray-400">
-                  {faceDetected ? 'Face Detected' : 'No Face'}
-                </span>
+              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                faceDetected 
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-200' 
+                  : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-200'
+              }`}>
+                {faceDetected ? '✅ Face Detected' : '❌ No Face'}
+              </div>
+              
+              {/* Timer */}
+              <div className="px-3 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium">
+                ⏱️ {formatTime(timeLeft)}
               </div>
               
               {/* Warnings */}
               {fullscreenWarnings > 0 && (
-                <div className="flex items-center space-x-2">
-                  <span className="text-yellow-600 dark:text-yellow-400">⚠️</span>
-                  <span className="text-sm text-yellow-600 dark:text-yellow-400">
-                    Warnings: {fullscreenWarnings}/3
-                  </span>
+                <div className="px-3 py-1 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
+                  ⚠️ {fullscreenWarnings}/3
                 </div>
               )}
-              
-              {/* Timer */}
-              <div className="bg-red-100 dark:bg-red-900/20 px-4 py-2 rounded-lg">
-                <span className="text-red-800 dark:text-red-200 font-bold">
-                  ⏰ {formatTime(timeLeft)}
-                </span>
-              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Test Content */}
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8">
-          {/* Question */}
-          <div className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">
-              Question {currentQuestion + 1}
-            </h2>
-            <p className="text-lg text-gray-700 dark:text-gray-300 mb-6">
-              {test.questions[currentQuestion].questionText}
-            </p>
-            
-            {/* Options */}
-            <div className="space-y-3">
-              {test.questions[currentQuestion].options.map((option, optionIndex) => (
-                <label
-                  key={optionIndex}
-                  className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition ${
-                    answers[currentQuestion] === optionIndex
-                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                      : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name={`question-${currentQuestion}`}
-                    value={optionIndex}
-                    checked={answers[currentQuestion] === optionIndex}
-                    onChange={() => handleAnswerSelect(currentQuestion, optionIndex)}
-                    className="sr-only"
-                  />
-                  <div className={`w-5 h-5 rounded-full border-2 mr-4 flex items-center justify-center ${
-                    answers[currentQuestion] === optionIndex
-                      ? 'border-blue-500 bg-blue-500'
-                      : 'border-gray-300 dark:border-gray-600'
-                  }`}>
-                    {answers[currentQuestion] === optionIndex && (
-                      <div className="w-2 h-2 rounded-full bg-white"></div>
-                    )}
+          {test.questions[currentQuestion] && (
+            <div className="space-y-6">
+              {/* Question */}
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">
+                  {test.questions[currentQuestion].questionText}
+                </h2>
+                
+                {test.questions[currentQuestion].explanation && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                    <p className="text-blue-800 dark:text-blue-200 text-sm">
+                      {test.questions[currentQuestion].explanation}
+                    </p>
                   </div>
-                  <span className="text-gray-700 dark:text-gray-300">
-                    {option}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
+                )}
+              </div>
 
-          {/* Navigation */}
-          <div className="flex items-center justify-between pt-6 border-t border-gray-200 dark:border-gray-700">
-            <button
-              onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
-              disabled={currentQuestion === 0}
-              className={`px-6 py-2 rounded-lg font-semibold transition ${
-                currentQuestion === 0
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'
-              }`}
-            >
-              Previous
-            </button>
-            
-            <div className="flex space-x-2">
-              {test.questions.map((_, index) => (
+              {/* Options */}
+              <div className="space-y-3">
+                {test.questions[currentQuestion].options.map((option, optionIndex) => (
+                  <label
+                    key={optionIndex}
+                    className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition ${
+                      answers[currentQuestion] === optionIndex
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name={`question-${currentQuestion}`}
+                      value={optionIndex}
+                      checked={answers[currentQuestion] === optionIndex}
+                      onChange={() => handleAnswerSelect(currentQuestion, optionIndex)}
+                      className="mr-3"
+                    />
+                    <span className="text-gray-800 dark:text-gray-200">
+                      {option.text}
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {/* Navigation */}
+              <div className="flex justify-between pt-6">
                 <button
-                  key={index}
-                  onClick={() => setCurrentQuestion(index)}
-                  className={`w-8 h-8 rounded-full text-sm font-semibold transition ${
-                    index === currentQuestion
-                      ? 'bg-blue-500 text-white'
-                      : answers[index] !== undefined
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
+                  disabled={currentQuestion === 0}
+                  className={`px-6 py-2 rounded-lg font-medium transition ${
+                    currentQuestion === 0
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-gray-500 text-white hover:bg-gray-600'
                   }`}
                 >
-                  {index + 1}
+                  Previous
                 </button>
-              ))}
+                
+                <div className="flex space-x-2">
+                  {test.questions.map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setCurrentQuestion(index)}
+                      className={`w-10 h-10 rounded-lg text-sm font-medium transition ${
+                        index === currentQuestion
+                          ? 'bg-blue-500 text-white'
+                          : answers[index] !== undefined
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-200'
+                          : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                      }`}
+                    >
+                      {index + 1}
+                    </button>
+                  ))}
+                </div>
+                
+                {currentQuestion < test.questions.length - 1 ? (
+                  <button
+                    onClick={() => setCurrentQuestion(prev => prev + 1)}
+                    className="px-6 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition"
+                  >
+                    Next
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleTestComplete}
+                    className="px-6 py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 transition"
+                  >
+                    Submit Test
+                  </button>
+                )}
+              </div>
             </div>
-            
-            <button
-              onClick={() => {
-                if (currentQuestion === test.questions.length - 1) {
-                  handleTestComplete();
-                } else {
-                  setCurrentQuestion(prev => Math.min(test.questions.length - 1, prev + 1));
-                }
-              }}
-              className="px-6 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition"
-            >
-              {currentQuestion === test.questions.length - 1 ? 'Submit Test' : 'Next'}
-            </button>
-          </div>
+          )}
         </div>
-      </div>
-
-      {/* Hidden webcam for face detection */}
-      <div className="hidden">
-        <Webcam
-          ref={webcamRef}
-          audio={false}
-          width={320}
-          height={240}
-        />
-        <canvas
-          ref={canvasRef}
-          width={320}
-          height={240}
-        />
       </div>
     </div>
   );

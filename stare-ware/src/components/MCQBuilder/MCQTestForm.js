@@ -6,7 +6,7 @@ import TagSelector from './TagSelector';
 const TESTS_KEY = 'mcq_tests';
 
 const MCQTestForm = ({ test, setTest, onSave, onPublish, publishError, canPublish }) => {
-  const { testTitle, description, tags, questions, status, id } = test;
+  const { testTitle, description, tags, questions, id } = test;
   const [preview, setPreview] = useState(false);
   const navigate = useNavigate();
 
