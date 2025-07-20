@@ -21,16 +21,53 @@ const emptyTest = {
 };
 
 function validateTest(test) {
-  if (!test.testTitle.trim()) return 'Test title is required.';
-  if (!test.questions || test.questions.length === 0) return 'At least one question is required.';
-  for (const [i, q] of test.questions.entries()) {
-    if (!q.questionText.trim()) return `Question ${i + 1} text is required.`;
-    if (!q.options || q.options.length < 2 || q.options.length > 6) return `Question ${i + 1} must have 2-6 options.`;
-    if (!q.options.every(opt => opt.text.trim())) return `All options in question ${i + 1} must have text.`;
-    if (!q.options.some(opt => opt.isCorrect)) return `Mark at least one correct answer in question ${i + 1}.`;
-    if (!q.marks || q.marks < 1) return `Marks must be at least 1 in question ${i + 1}.`;
-    if (q.timer && (isNaN(q.timer) || q.timer < 0)) return `Timer must be a positive number in question ${i + 1}.`;
+  // Check test title
+  if (!test.testTitle || !test.testTitle.trim()) {
+    return 'Test title is required.';
   }
+  
+  // Check if there are any questions
+  if (!test.questions || test.questions.length === 0) {
+    return 'At least one question is required.';
+  }
+  
+  // Validate each question
+  for (const [i, q] of test.questions.entries()) {
+    const questionNumber = i + 1;
+    
+    // Check question text
+    if (!q.questionText || !q.questionText.trim()) {
+      return `Question ${questionNumber}: Question text is required.`;
+    }
+    
+    // Check options array exists and has correct length
+    if (!q.options || q.options.length < 2 || q.options.length > 6) {
+      return `Question ${questionNumber}: Must have 2-6 options.`;
+    }
+    
+    // Check all options have text
+    for (const [optIdx, opt] of q.options.entries()) {
+      if (!opt.text || !opt.text.trim()) {
+        return `Question ${questionNumber}, Option ${optIdx + 1}: Option text is required.`;
+      }
+    }
+    
+    // Check at least one option is marked as correct
+    if (!q.options.some(opt => opt.isCorrect)) {
+      return `Question ${questionNumber}: Mark at least one correct answer.`;
+    }
+    
+    // Check marks
+    if (!q.marks || q.marks < 1) {
+      return `Question ${questionNumber}: Marks must be at least 1.`;
+    }
+    
+    // Check timer if provided
+    if (q.timer !== undefined && q.timer !== '' && (isNaN(q.timer) || q.timer < 0)) {
+      return `Question ${questionNumber}: Timer must be a positive number.`;
+    }
+  }
+  
   return '';
 }
 
