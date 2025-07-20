@@ -203,7 +203,7 @@ const AppearTest = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [testStarted, faceDetected, faceRecognitionReady, handleSuspiciousActivity]);
 
-  const handleSuspiciousActivity = (reason) => {
+  const handleSuspiciousActivity = useCallback((reason) => {
     setSuspiciousActivity(true);
     alert(`⚠️ WARNING: ${reason}\nThis is your ${fullscreenWarnings + 1} warning. Test will auto-submit after 3 warnings.`);
     
@@ -213,9 +213,9 @@ const AppearTest = () => {
         handleTestComplete();
       }, 2000);
     }
-  };
+  }, [fullscreenWarnings]);
 
-  const handleTestComplete = () => {
+  const handleTestComplete = useCallback(() => {
     setTestCompleted(true);
     setTestStarted(false);
     
@@ -244,7 +244,7 @@ const AppearTest = () => {
     const existingResults = JSON.parse(localStorage.getItem('test_results') || '[]');
     existingResults.push(testResult);
     localStorage.setItem('test_results', JSON.stringify(existingResults));
-  };
+  }, [test, answers]);
 
   const handleAnswerSelect = (questionIndex, answerIndex) => {
     setAnswers(prev => ({
