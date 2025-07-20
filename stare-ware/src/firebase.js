@@ -2,7 +2,7 @@
 
 import { initializeApp } from "firebase/app";
 // import { getAnalytics } from "firebase/analytics";
-import { getAuth } from "firebase/auth"; // If you're using Firebase Auth
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth"; // If you're using Firebase Auth
 import { getFirestore } from "firebase/firestore"; // Add Firestore import
 
 // Firebase configuration for your project
@@ -20,6 +20,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 // const analytics = getAnalytics(app);
 export const auth = getAuth(app); // Export auth if you're using it
+setPersistence(auth, browserLocalPersistence);
 export const db = getFirestore(app); // Export Firestore instance
 
 export default app;
