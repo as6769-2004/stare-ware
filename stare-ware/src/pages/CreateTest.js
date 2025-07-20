@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { MCQTestForm } from '../components/MCQBuilder';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { saveTest, loadUserTests } from '../utils/firestore';
 
 const TESTS_KEY = 'mcq_tests';
 
@@ -79,33 +80,37 @@ const CreateTest = () => {
   const [publishError, setPublishError] = useState('');
   const [canPublish, setCanPublish] = useState(false);
   const [userEmail, setUserEmail] = useState('');
+  const [user, setUser] = useState(null);
 
   // Listen for auth user
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
       setUserEmail(u?.email || '');
     });
     return () => unsub();
   }, []);
 
-  // Load test for editing or start new
+  // Load test for editing or start new (from Firestore)
   useEffect(() => {
+    if (!user) return;
     const id = getQueryId(location.search);
-    const saved = localStorage.getItem(TESTS_KEY);
-    if (id && saved) {
-      try {
-        const tests = JSON.parse(saved);
+    if (id) {
+      loadUserTests(user).then(tests => {
         const found = tests.find(t => t.id === id);
         if (found) {
           setTest(found);
           setIsLoaded(true);
           return;
         }
-      } catch {}
+        setTest({ ...emptyTest, id });
+        setIsLoaded(true);
+      });
+    } else {
+      setTest({ ...emptyTest, id: Date.now().toString() });
+      setIsLoaded(true);
     }
-    setTest({ ...emptyTest, id: Date.now().toString() });
-    setIsLoaded(true);
-  }, [location.search]);
+  }, [location.search, user]);
 
   // Recalculate error and canPublish on every test change
   useEffect(() => {
@@ -114,30 +119,18 @@ const CreateTest = () => {
     setCanPublish(!error);
   }, [test]);
 
-  // Save or update test in localStorage
-  const handleSave = (updatedTest, status = 'draft') => {
-    const saved = localStorage.getItem(TESTS_KEY);
-    let tests = [];
-    if (saved) {
-      try {
-        tests = JSON.parse(saved);
-      } catch {}
-    }
-    const idx = tests.findIndex(t => t.id === updatedTest.id);
+  // Save or update test in Firestore
+  const handleSave = async (updatedTest, status = 'draft') => {
+    if (!user) return;
     const newTest = { ...updatedTest, status, ownerEmail: userEmail };
-    if (idx >= 0) {
-      tests[idx] = newTest;
-    } else {
-      tests.push(newTest);
-    }
-    localStorage.setItem(TESTS_KEY, JSON.stringify(tests));
+    await saveTest(newTest, user);
     setTest(newTest);
     alert(status === 'published' ? 'Test published!' : 'Test saved as draft!');
     if (status === 'published') navigate('/');
   };
 
   // Strict publish handler with validation
-  const handlePublish = (updatedTest) => {
+  const handlePublish = async (updatedTest) => {
     const error = validateTest(updatedTest);
     if (error) {
       setPublishError(error);
@@ -146,7 +139,7 @@ const CreateTest = () => {
     }
     setPublishError('');
     setCanPublish(true);
-    handleSave(updatedTest, 'published');
+    await handleSave(updatedTest, 'published');
   };
 
   if (!isLoaded) return <div className="p-8 text-center">Loading...</div>;
