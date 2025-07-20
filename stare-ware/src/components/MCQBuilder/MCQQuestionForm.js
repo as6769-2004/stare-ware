@@ -54,21 +54,37 @@ const MCQQuestionForm = ({ question, onChange, onRemove }) => {
 
   // Validation
   const errors = {};
-  if (!question.questionText.trim()) errors.questionText = 'Question text is required.';
-  if (question.options.length < 2) errors.options = 'At least 2 options are required.';
-  if (question.options.length > 6) errors.options = 'No more than 6 options allowed.';
-  if (!question.options.every(opt => opt.text.trim())) errors.optionsText = 'All options must have text.';
-  if (!question.options.some(opt => opt.isCorrect)) errors.correct = 'Mark at least one correct answer.';
-  if (!question.marks || question.marks < 1) errors.marks = 'Marks must be at least 1.';
-  if (question.timer && (isNaN(question.timer) || question.timer < 0)) errors.timer = 'Timer must be a positive number.';
+  if (!question.questionText || !question.questionText.trim()) {
+    errors.questionText = 'Question text is required.';
+  }
+  if (question.options.length < 2) {
+    errors.options = 'At least 2 options are required.';
+  }
+  if (question.options.length > 6) {
+    errors.options = 'No more than 6 options allowed.';
+  }
+  if (!question.options.every(opt => opt.text && opt.text.trim())) {
+    errors.optionsText = 'All options must have text.';
+  }
+  if (!question.options.some(opt => opt.isCorrect)) {
+    errors.correct = 'Mark at least one correct answer.';
+  }
+  if (!question.marks || question.marks < 1) {
+    errors.marks = 'Marks must be at least 1.';
+  }
+  if (question.timer !== undefined && question.timer !== '' && (isNaN(question.timer) || question.timer < 0)) {
+    errors.timer = 'Timer must be a positive number.';
+  }
 
   return (
     <div>
       <div className="mb-2">
         <label className="font-semibold">Question Text</label>
         <textarea
-          className="w-full border rounded px-2 py-1 mt-1"
-          placeholder="Enter question text"
+          className={`w-full border rounded px-2 py-1 mt-1 ${
+            errors.questionText ? 'border-red-300 bg-red-50' : 'border-gray-300'
+          }`}
+          placeholder="Enter question text (required)"
           value={question.questionText}
           onChange={e => onChange({ ...question, questionText: e.target.value })}
         />
@@ -129,24 +145,32 @@ const MCQQuestionForm = ({ question, onChange, onRemove }) => {
         />
       </div>
       <div className="mb-2 flex gap-4 items-center">
-        <input
-          type="number"
-          min={1}
-          value={question.marks}
-          onChange={e => onChange({ ...question, marks: Number(e.target.value) })}
-          className="border rounded px-2 py-1"
-          placeholder="Marks"
-        />
-        {errors.marks && <div className="text-red-600 text-xs mt-1">{errors.marks}</div>}
-        <input
-          type="number"
-          min={0}
-          value={question.timer || ''}
-          onChange={e => onChange({ ...question, timer: Number(e.target.value) })}
-          className="border rounded px-2 py-1"
-          placeholder="Timer (sec)"
-        />
-        {errors.timer && <div className="text-red-600 text-xs mt-1">{errors.timer}</div>}
+        <div className="flex-1">
+          <input
+            type="number"
+            min={1}
+            value={question.marks}
+            onChange={e => onChange({ ...question, marks: Number(e.target.value) })}
+            className={`border rounded px-2 py-1 w-full ${
+              errors.marks ? 'border-red-300 bg-red-50' : 'border-gray-300'
+            }`}
+            placeholder="Marks (required)"
+          />
+          {errors.marks && <div className="text-red-600 text-xs mt-1">{errors.marks}</div>}
+        </div>
+        <div className="flex-1">
+          <input
+            type="number"
+            min={0}
+            value={question.timer || ''}
+            onChange={e => onChange({ ...question, timer: Number(e.target.value) })}
+            className={`border rounded px-2 py-1 w-full ${
+              errors.timer ? 'border-red-300 bg-red-50' : 'border-gray-300'
+            }`}
+            placeholder="Timer (sec, optional)"
+          />
+          {errors.timer && <div className="text-red-600 text-xs mt-1">{errors.timer}</div>}
+        </div>
       </div>
       <div className="flex gap-2 mt-2">
         <button
