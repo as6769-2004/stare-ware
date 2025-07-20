@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { loadUserTests } from '../utils/firestore';
 
 const TESTS_KEY = 'mcq_tests';
 
@@ -27,31 +28,47 @@ const Profile = () => {
     return () => unsub();
   }, []);
 
-  // Load tests and calculate stats
+  // Load tests and calculate stats from Firestore
   useEffect(() => {
-    const saved = localStorage.getItem(TESTS_KEY);
-    if (saved) {
-      try {
-        const allTests = JSON.parse(saved);
-        const userTests = user ? allTests.filter(t => t.ownerEmail === user.email) : [];
-        setTests(userTests);
-        
-        // Calculate statistics
-        const stats = {
-          totalTests: userTests.length,
-          publishedTests: userTests.filter(t => t.status === 'published').length,
-          draftTests: userTests.filter(t => t.status === 'draft').length,
-          liveTests: userTests.filter(t => t.status === 'live').length,
-          closedTests: userTests.filter(t => t.status === 'closed').length,
-          totalQuestions: userTests.reduce((sum, test) => sum + (test.questions?.length || 0), 0),
-          averageQuestions: userTests.length > 0 ? 
-            (userTests.reduce((sum, test) => sum + (test.questions?.length || 0), 0) / userTests.length).toFixed(1) : 0
-        };
-        setStats(stats);
-      } catch {
-        setTests([]);
-      }
+    if (!user) {
+      setTests([]);
+      setStats({
+        totalTests: 0,
+        publishedTests: 0,
+        draftTests: 0,
+        liveTests: 0,
+        closedTests: 0,
+        totalQuestions: 0,
+        averageQuestions: 0
+      });
+      return;
     }
+    loadUserTests(user).then(userTests => {
+      setTests(userTests);
+      // Calculate statistics
+      const stats = {
+        totalTests: userTests.length,
+        publishedTests: userTests.filter(t => t.status === 'published').length,
+        draftTests: userTests.filter(t => t.status === 'draft').length,
+        liveTests: userTests.filter(t => t.status === 'live').length,
+        closedTests: userTests.filter(t => t.status === 'closed').length,
+        totalQuestions: userTests.reduce((sum, test) => sum + (test.questions?.length || 0), 0),
+        averageQuestions: userTests.length > 0 ? 
+          (userTests.reduce((sum, test) => sum + (test.questions?.length || 0), 0) / userTests.length).toFixed(1) : 0
+      };
+      setStats(stats);
+    }).catch(() => {
+      setTests([]);
+      setStats({
+        totalTests: 0,
+        publishedTests: 0,
+        draftTests: 0,
+        liveTests: 0,
+        closedTests: 0,
+        totalQuestions: 0,
+        averageQuestions: 0
+      });
+    });
   }, [user]);
 
   if (!user) {
